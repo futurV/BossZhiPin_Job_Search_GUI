@@ -1,26 +1,21 @@
 /** @type {import('tailwindcss').Config} */
-// Minimalist Monochrome：纯黑白 + 系统衬线，零圆角，零阴影
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       fontFamily: {
-        // 衬线（display + body）：系统自带，中文走宋体
+        sans: [
+          '"Segoe UI Variable"', '"Segoe UI"', '"Microsoft YaHei UI"',
+          '"Microsoft YaHei"', '"PingFang SC"', '"Noto Sans CJK SC"', 'sans-serif',
+        ],
         serif: [
-          "Georgia",
-          '"Times New Roman"',
-          '"Source Han Serif SC"',
-          '"Songti SC"',
-          '"宋体"',
-          "serif",
+          '"Segoe UI Variable"', '"Segoe UI"', '"Microsoft YaHei UI"',
+          '"Microsoft YaHei"', '"PingFang SC"', 'sans-serif',
         ],
         // 等宽（labels / 数据 / 日志）
         mono: [
-          "Consolas",
-          "Menlo",
-          '"Courier New"',
-          '"Noto Sans Mono CJK SC"',
-          "monospace",
+          '"Cascadia Mono"', '"Cascadia Code"', "Consolas",
+          '"Microsoft YaHei UI"', "monospace",
         ],
       },
       colors: {
@@ -33,25 +28,7 @@ export default {
       },
       letterSpacing: {
         // 配合 uppercase 小标签使用
-        widest: "0.18em",
-      },
-      borderRadius: {
-        // 全站零圆角，覆盖默认的 sm/DEFAULT/md 等
-        DEFAULT: "0",
-        sm: "0",
-        md: "0",
-        lg: "0",
-        xl: "0",
-        "2xl": "0",
-        full: "0",
-      },
-      boxShadow: {
-        // 强制无阴影
-        none: "none",
-        DEFAULT: "none",
-        sm: "none",
-        md: "none",
-        lg: "none",
+        widest: "0.08em",
       },
     },
   },

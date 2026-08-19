@@ -41,11 +41,9 @@ KNOWN_KEYS: list[tuple[str, str, bool]] = [
     ("BOSS_MIN_MATCH_SCORE", "LLM 匹配分阈值（默认 50）", False),
     ("BOSS_MIN_KEYWORD_MATCH", "关键词匹配门槛（默认 2，跳过太多就调低到 1）", False),
     ("BOSS_EXCLUDE_KEYWORDS", "岗位黑名单（用逗号分隔，如：外包,驻场）", False),
-    ("BOSS_FIXED_GREETING", "固定招呼语（留空则按 JD 生成）", False),
     ("BOSS_AUTO_SEND_MAX_SENT", "单次最大成功投递数（建议 3-10）", False),
     ("BOSS_AUTO_SEND_DELAY_MIN", "成功投递后最短等待秒数", False),
     ("BOSS_AUTO_SEND_DELAY_MAX", "成功投递后最长等待秒数", False),
-    ("LOGLEVEL", "日志级别（默认 INFO）", False),
 ]
 
 

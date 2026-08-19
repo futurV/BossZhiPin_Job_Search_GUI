@@ -339,11 +339,15 @@ async def _start_browser_with_retry(config: Config, attempts: int = 3) -> uc.Bro
 
 async def open_browser_with_options(url: str, browser: str) -> None:
     """启动 Chrome 并打开 url。``browser`` 仅接受 ``"chrome"``。"""
-    global _browser, _tab
+    global _browser, _tab, CHROME_PROFILE_DIR
     if browser != "chrome":
         raise NotImplementedError(
             f"browser={browser!r} 不再支持；nodriver 只走 Chrome。"
         )
+    # Config 页保存后无需重启：每次启动浏览器都重新读取最新 profile 路径。
+    CHROME_PROFILE_DIR = os.path.abspath(
+        os.environ.get("BOSS_CHROME_PROFILE", "./chrome_profile")
+    )
     os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
     # nodriver 用 urllib 连 Chrome CDP（http://127.0.0.1:<port>/json/version）。
     # 如果用户开了代理（如 Clash），http_proxy 会拦截 localhost 请求导致 502。
