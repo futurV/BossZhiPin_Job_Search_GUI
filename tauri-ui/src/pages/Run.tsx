@@ -36,6 +36,7 @@ export default function RunPage() {
   const delayMin = useRunStore((s) => s.formDelayMin);
   const delayMax = useRunStore((s) => s.formDelayMax);
   const setFormState = useRunStore((s) => s.setFormState);
+  const hydrateForm = useRunStore((s) => s.hydrateForm);
 
   const running = useRunStore((s) => s.running);
   const events = useRunStore((s) => s.events);
@@ -54,15 +55,17 @@ export default function RunPage() {
       .then((cfg) => setLlmCfg(cfg))
       .catch((e) => setLlmError(String(e)));
 
+    // 已在当前 App 会话编辑过表单时不再读 .env，避免切换 tab 后旧保存值反向覆盖。
+    if (useRunStore.getState().formHydrated) return;
     ipc.getEnvFields().then(({ fields }) => {
       const stateUpdate: Record<string, any> = {};
       const nameField = fields.find(f => f.key === "BOSS_USR_NAME");
-      if (nameField && nameField.value && !useRunStore.getState().formUsrName) {
+      if (nameField?.value) {
         stateUpdate.formUsrName = nameField.value;
       }
       
       const labelField = fields.find(f => f.key === "BOSS_LABEL");
-      if (labelField && labelField.value && !useRunStore.getState().formLabel) {
+      if (labelField?.value) {
         stateUpdate.formLabel = labelField.value;
       }
       const maxSentField = fields.find(f => f.key === "BOSS_AUTO_SEND_MAX_SENT");
@@ -72,10 +75,8 @@ export default function RunPage() {
       const delayMaxField = fields.find(f => f.key === "BOSS_AUTO_SEND_DELAY_MAX");
       if (delayMaxField?.value) stateUpdate.formDelayMax = delayMaxField.value;
       
-      if (Object.keys(stateUpdate).length > 0) {
-        setFormState(stateUpdate);
-      }
-    }).catch(() => {});
+      hydrateForm(stateUpdate);
+    }).catch(() => hydrateForm({}));
   }, []);
 
   // 挂载时读回当前简历（standalone 下持久化在 app 数据目录的 resume/）
@@ -303,11 +304,11 @@ export default function RunPage() {
     : t("run.statusIdle");
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       {/* === 段落 1：标题 + 状态 === */}
-      <section className="flex items-end justify-between gap-6 pb-4 border-b-2 border-[var(--ink)]">
+      <section className="flex items-center justify-between gap-6">
         <div>
-          <h2 className="font-serif text-5xl leading-none tracking-tight">
+          <h2 className="text-3xl font-semibold leading-tight">
             {t("run.title")}
           </h2>
           <p className="mono-tag mt-3">{t("run.subtitle")}</p>
@@ -316,7 +317,7 @@ export default function RunPage() {
           <span className="mono-tag block">{t("run.status")}</span>
           <span
             className={[
-              "font-mono text-sm uppercase tracking-widest mt-1 inline-block px-2 py-1",
+              "text-sm font-medium mt-1 inline-block rounded-full px-3 py-1",
               running
                 ? "bg-[var(--ink)] text-[var(--paper)]"
                 : "text-[var(--muted-fg)]",
@@ -328,7 +329,11 @@ export default function RunPage() {
       </section>
 
       {/* === 段落 2：参数表单 === */}
-      <section>
+      <section className="panel">
+        <div className="mb-6 rounded-lg border border-blue-100 bg-[var(--accent-soft)] px-4 py-3 text-sm text-blue-800">
+          <p className="font-semibold">{t("run.overrideNote")}</p>
+          <p className="mt-1 text-xs leading-relaxed text-blue-700">{t("run.greetingNotice")}</p>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
           <Field label={t("run.fieldName")} hint={t("run.hintRequired")}>
             <input
@@ -455,7 +460,7 @@ export default function RunPage() {
       </section>
 
       {/* === 段落 2.5：简历拖拽上传 === */}
-      <section>
+      <section className="panel">
         <div className="flex items-baseline justify-between">
           <label className="field-label">{t("run.fieldResume")}</label>
           <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
@@ -477,7 +482,7 @@ export default function RunPage() {
           role="button"
           tabIndex={running ? -1 : 0}
           className={[
-            "mt-2 border-2 border-dashed p-6 transition-colors duration-100",
+            "mt-2 rounded-lg border-2 border-dashed p-6 transition-colors duration-100",
             dragging
               ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)]"
               : "border-[var(--border-light)]",
@@ -597,7 +602,7 @@ export default function RunPage() {
       )}
 
       {/* === 段落 4：双面板 === */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-2 border-[var(--ink)]">
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Panel title={t("run.panelProgress")} rightDivider>
           <div
             ref={eventsScrollRef}

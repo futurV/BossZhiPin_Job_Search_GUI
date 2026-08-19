@@ -11,6 +11,13 @@ import { LANGS, type Lang } from "../lib/i18n";
 // 支持任意端点——DeepSeek/OpenAI/Claude/百炼/GLM/豆包/Kimi/本地 Ollama…
 // 都是同一条路，列表只是糖，不是限制。下面是其余通用字段。
 const CUSTOM = ""; // 下拉里「自定义」的值
+const RUN_FIELD_KEYS = new Set([
+  "BOSS_USR_NAME",
+  "BOSS_LABEL",
+  "BOSS_AUTO_SEND_MAX_SENT",
+  "BOSS_AUTO_SEND_DELAY_MIN",
+  "BOSS_AUTO_SEND_DELAY_MAX",
+]);
 
 export default function ConfigPage() {
   const t = useT();
@@ -33,11 +40,6 @@ export default function ConfigPage() {
   // 明文/密文切换：粘贴 key 后能核对一眼，避免带错空格/漏字符跑到一半才报 401
   const [showKey, setShowKey] = useState(false);
 
-  // 招呼语自定义 prompt 段（空字符串 = 用内置默认）
-  const [letterPrompt, setLetterPrompt] = useState("");
-  const [letterPromptInitial, setLetterPromptInitial] = useState("");
-  const [letterPromptDefault, setLetterPromptDefault] = useState("");
-
   useEffect(() => {
     refresh();
   }, []);
@@ -46,20 +48,17 @@ export default function ConfigPage() {
     setLoading(true);
     setError(null);
     try {
-      const [{ fields }, cfg, lp] = await Promise.all([
+      const [{ fields }, cfg] = await Promise.all([
         ipc.getEnvFields(),
         ipc.getLlmConfig(),
-        ipc.getLetterPrompt(),
       ]);
-      setFields(fields);
+      // 运行页参数只有一个入口，避免配置页出现同名字段形成第二真相源。
+      setFields(fields.filter((field) => !RUN_FIELD_KEYS.has(field.key)));
       setEdits({});
       setLlmCfg(cfg);
       setBaseUrl(cfg.baseUrl);
       setModel(cfg.model);
       setKeyEdit(null);
-      setLetterPrompt(lp.prompt);
-      setLetterPromptInitial(lp.prompt);
-      setLetterPromptDefault(lp.default);
       // 按 baseUrl 匹配预设来高亮下拉；匹配不上就是「自定义」
       const match = cfg.presets.find((p) => p.baseUrl === cfg.baseUrl);
       setPreset(match ? match.name : CUSTOM);
@@ -108,8 +107,7 @@ export default function ConfigPage() {
   const llmDirty =
     llmCfg !== null &&
     (baseUrl !== llmCfg.baseUrl || model !== llmCfg.model || keyEdit !== null);
-  const promptDirty = letterPrompt !== letterPromptInitial;
-  const dirty = Object.keys(edits).length > 0 || llmDirty || promptDirty;
+  const dirty = Object.keys(edits).length > 0 || llmDirty;
 
   async function save() {
     setSaving(true);
@@ -120,10 +118,6 @@ export default function ConfigPage() {
       }
       if (Object.keys(edits).length > 0) {
         await ipc.writeEnvFields(edits);
-      }
-      if (promptDirty) {
-        // 末尾留白没意义，trim 掉；空串 = 删除自定义 = 回退默认
-        await ipc.setLetterPrompt(letterPrompt.trim());
       }
       setSaved(true);
       await refresh();
@@ -144,17 +138,12 @@ export default function ConfigPage() {
     ipc.setLanguage(next).catch(() => {});
   }
 
-  function editPrompt(v: string) {
-    setSaved(false);
-    setLetterPrompt(v);
-  }
-
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       {/* === 标题段 === */}
-      <section className="flex items-end justify-between gap-6 pb-4 border-b-2 border-[var(--ink)]">
+      <section className="flex items-center justify-between gap-6">
         <div>
-          <h2 className="font-serif text-5xl leading-none tracking-tight">
+          <h2 className="text-3xl font-semibold leading-tight">
             {t("config.title")}
           </h2>
           <p className="mono-tag mt-3">
@@ -179,7 +168,7 @@ export default function ConfigPage() {
       )}
 
       {/* === 界面语言 === 标签刻意双语，切错语言也能找回；不走 dirty/保存流程，选即生效 */}
-      <section className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-center">
+      <section className="panel grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-center">
         <label className="field-label">{t("config.language")}</label>
         <select
           value={lang}
@@ -200,7 +189,7 @@ export default function ConfigPage() {
         <>
           {/* === AI 端点：base_url + key + model === */}
           {llmCfg && (
-            <section className="space-y-5">
+            <section className="panel space-y-5">
               <div>
                 <label className="field-label">{t("config.endpoint")}</label>
                 <p className="mt-1 text-xs font-mono text-[var(--muted-fg)] italic">
@@ -304,7 +293,11 @@ export default function ConfigPage() {
           )}
 
           {/* === 其余通用字段 === */}
-          <section className="divide-y divide-[var(--border-light)] border-t-2 border-[var(--ink)] pt-2">
+          <section className="panel divide-y divide-[var(--border-light)]">
+            <div className="pb-4">
+              <h3 className="text-lg font-semibold">{t("config.advancedTitle")}</h3>
+              <p className="mt-1 text-sm text-[var(--muted-fg)]">{t("config.advancedHint")}</p>
+            </div>
             {fields.map((f) => (
               <div key={f.key} className="py-6 grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 md:gap-10 items-start">
                 <div>
@@ -333,37 +326,6 @@ export default function ConfigPage() {
             ))}
           </section>
 
-          {/* === 招呼语 Prompt（自定义生成指令，留空用内置默认）=== */}
-          <section className="space-y-3 border-t-2 border-[var(--ink)] pt-6">
-            <div>
-              <label className="field-label">{t("config.letterPrompt")}</label>
-              <p className="mt-1 text-xs font-mono text-[var(--muted-fg)] italic">
-                {t("config.letterPromptHint")}
-              </p>
-            </div>
-            <textarea
-              value={letterPrompt}
-              onChange={(e) => editPrompt(e.target.value)}
-              rows={8}
-              className="field-input font-mono text-sm leading-relaxed"
-              placeholder={letterPromptDefault || t("config.letterPromptPlaceholder")}
-            />
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => editPrompt("")}
-                disabled={letterPrompt === ""}
-                className="btn-ghost text-xs"
-              >
-                {t("btn.resetDefault")}
-              </button>
-              {letterPrompt === "" && (
-                <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--muted-fg)] italic">
-                  {t("config.letterPromptPlaceholder")}
-                </span>
-              )}
-            </div>
-          </section>
         </>
       )}
 

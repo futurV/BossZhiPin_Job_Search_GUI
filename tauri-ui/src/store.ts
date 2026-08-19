@@ -24,6 +24,7 @@ type RunState = {
   formMaxSent: string;
   formDelayMin: string;
   formDelayMax: string;
+  formHydrated: boolean;
 
   setRunning: (running: boolean) => void;
   pushEvent: (ev: ProgressEvent) => void;
@@ -32,6 +33,10 @@ type RunState = {
   setLang: (lang: Lang) => void;
 
   setFormState: (state: Partial<Pick<RunState,
+    "formUsrName" | "formLabel" | "formDryRun" |
+    "formMaxSent" | "formDelayMin" | "formDelayMax"
+  >>) => void;
+  hydrateForm: (state: Partial<Pick<RunState,
     "formUsrName" | "formLabel" | "formDryRun" |
     "formMaxSent" | "formDelayMin" | "formDelayMax"
   >>) => void;
@@ -51,6 +56,7 @@ export const useRunStore = create<RunState>((set) => ({
   formMaxSent: "10",
   formDelayMin: "10",
   formDelayMax: "30",
+  formHydrated: false,
 
   setRunning: (running) => set({ running }),
   pushEvent: (ev) =>
@@ -69,7 +75,12 @@ export const useRunStore = create<RunState>((set) => ({
   pushLog: (line) => set((s) => ({ logs: [...s.logs, line].slice(-MAX_LOGS) })),
   clear: () => set({ events: [], logs: [], currentIndex: null }),
   setLang: (lang) => set({ lang }),
-  setFormState: (state) => set((s) => ({ ...s, ...state })),
+  // 任何用户编辑都标记为已初始化；之后页面重新挂载不能再用 .env 覆盖它。
+  setFormState: (state) => set((s) => ({ ...s, ...state, formHydrated: true })),
+  // .env 只允许在应用生命周期内初始化一次。切换 tab 时 Run 会重新挂载，
+  // 但当前表单始终是本次运行的最高优先级真相源。
+  hydrateForm: (state) =>
+    set((s) => s.formHydrated ? s : ({ ...s, ...state, formHydrated: true })),
 }));
 
 /** 组件里取翻译函数：`const t = useT()`，`t("run.title")`。

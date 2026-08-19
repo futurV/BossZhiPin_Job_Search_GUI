@@ -95,6 +95,36 @@ async def is_running() -> dict[str, bool]:
     return {"running": runner.is_running()}
 
 
+def _apply_run_config(config: RunConfig) -> None:
+    """立即应用 GUI 表单值，并把它作为本次运行的最高优先级配置。"""
+    if config.dry_run:
+        environ["DRY_RUN"] = "1"
+    else:
+        environ.pop("DRY_RUN", None)
+    environ["BOSS_USR_NAME"] = config.usr_name
+    if config.resume_path:
+        environ["RESUME_PATH"] = config.resume_path
+    if config.label:
+        environ["BOSS_LABEL"] = config.label
+    else:
+        environ.pop("BOSS_LABEL", None)
+    environ["BOSS_AUTO_SEND_MAX_SENT"] = str(config.max_sent)
+    environ["BOSS_AUTO_SEND_DELAY_MIN"] = str(config.delay_min)
+    environ["BOSS_AUTO_SEND_DELAY_MAX"] = str(config.delay_max)
+
+    # 同时持久化，下次启动以最后一次实际运行的表单为初始值。
+    from boss_zhipin.gui.env_io import write_env
+    write_env(
+        {
+            "BOSS_USR_NAME": config.usr_name,
+            "BOSS_LABEL": config.label,
+            "BOSS_AUTO_SEND_MAX_SENT": str(config.max_sent),
+            "BOSS_AUTO_SEND_DELAY_MIN": str(config.delay_min),
+            "BOSS_AUTO_SEND_DELAY_MAX": str(config.delay_max),
+        }
+    )
+
+
 def _build_main_loop_factory(config: RunConfig):
     """把 RunConfig + env var 折叠成一个无参的 coroutine 工厂。
 
@@ -105,38 +135,6 @@ def _build_main_loop_factory(config: RunConfig):
     async def factory():
         # 延迟 import，让没装 ``tauri`` 可选依赖时 import boss_zhipin.tauri 不立即炸。
         from boss_zhipin.cli import DEFAULT_RESUME_PATH, run_provider
-
-        # 同步到 env，业务代码深处读 env 的地方（DRY_RUN / RESUME_PATH 等）也能感知。
-        # DRY_RUN 必须**显式清掉**：os.environ 是进程级、跨 run 复用的。只设不清
-        # 的话，用户先勾 Dry-run 测一次留下 DRY_RUN=1，之后取消勾选真跑时，任何
-        # call-time 读 os.getenv("DRY_RUN") 的地方仍判为 dry-run → 招呼语只生成不
-        # 发送，且要重启 App 才好（非技术用户极难自查）。每次按当前勾选状态归位。
-        if config.dry_run:
-            environ["DRY_RUN"] = "1"
-        else:
-            environ.pop("DRY_RUN", None)
-        environ["BOSS_USR_NAME"] = config.usr_name
-        if config.resume_path:
-            environ["RESUME_PATH"] = config.resume_path
-        if config.label:
-            environ["BOSS_LABEL"] = config.label
-        else:
-            environ.pop("BOSS_LABEL", None)
-        environ["BOSS_AUTO_SEND_MAX_SENT"] = str(config.max_sent)
-        environ["BOSS_AUTO_SEND_DELAY_MIN"] = str(config.delay_min)
-        environ["BOSS_AUTO_SEND_DELAY_MAX"] = str(config.delay_max)
-
-        # GUI 运行参数同时写回 .env：下次启动仍显示同一组值，CLI 与 GUI 也共享。
-        from boss_zhipin.gui.env_io import write_env
-        write_env(
-            {
-                "BOSS_USR_NAME": config.usr_name,
-                "BOSS_LABEL": config.label,
-                "BOSS_AUTO_SEND_MAX_SENT": str(config.max_sent),
-                "BOSS_AUTO_SEND_DELAY_MIN": str(config.delay_min),
-                "BOSS_AUTO_SEND_DELAY_MAX": str(config.delay_max),
-            }
-        )
 
         resume_path = environ.get("RESUME_PATH", "").strip() or DEFAULT_RESUME_PATH
 
@@ -199,6 +197,10 @@ async def start_run(body: StartRunBody, webview_window: WebviewWindow) -> dict[s
         raise ValueError(msg("err.need_ai"))
     if not llm_cfg["model"]:
         raise ValueError(msg("err.need_model"))
+
+    # 在创建后台任务前同步应用。这样 pyInvoke 返回 started 时，GUI 当前值已经
+    # 覆盖旧环境变量；不会因任务调度时序读到上一次运行的 max/delay/tag。
+    _apply_run_config(body.config)
 
     progress_channel = body.progress_channel.channel_on(webview_window.as_ref_webview())
     log_channel = body.log_channel.channel_on(webview_window.as_ref_webview())

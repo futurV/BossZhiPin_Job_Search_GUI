@@ -55,6 +55,11 @@ class TestWriteEnvSyncsEnviron:
 
 
 class TestReadEnv:
+    def test_unused_gui_fields_are_not_exposed(self):
+        keys = {item["key"] for item in env_io.field_meta()}
+        assert "BOSS_FIXED_GREETING" not in keys
+        assert "LOGLEVEL" not in keys
+
     def test_round_trip(self, in_tmp_cwd, monkeypatch):
         monkeypatch.delenv("BOSS_USR_NAME", raising=False)
         env_io.write_env({"BOSS_USR_NAME": "张三"})

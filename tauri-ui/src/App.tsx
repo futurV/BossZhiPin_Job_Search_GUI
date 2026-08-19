@@ -53,24 +53,23 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col">
       <UpdateBanner />
-      <header className="border-b-4 border-[var(--ink)] bg-[var(--paper)]">
-        <div className="max-w-7xl mx-auto px-8 pt-8 pb-2 flex items-baseline gap-10">
-          {/* 主标题：oversized serif italic，作为视觉锚点 */}
-          <h1 className="font-serif italic text-3xl md:text-4xl leading-none tracking-tight">
-            Boss<span className="not-italic font-normal">·</span>Zhipin
-            <span className="block text-[10px] not-italic font-mono uppercase tracking-widest text-[var(--muted-fg)] mt-1">
-              Auto Greeting · Job Helper
+      <header className="border-b border-[var(--border-light)] bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 md:px-8 py-4 flex items-center gap-8">
+          <h1 className="text-xl md:text-2xl font-semibold leading-none tracking-tight whitespace-nowrap">
+            Boss<span className="font-normal text-[var(--accent)]">·</span>Zhipin
+            <span className="block text-xs font-normal text-[var(--muted-fg)] mt-1">
+              {t("header.subtitle")}
             </span>
           </h1>
 
           {/* tab 群：uppercase mono，当前项底部 4px 黑线 */}
-          <nav className="flex gap-8 self-end pb-1">
+          <nav className="flex gap-1 rounded-lg bg-[var(--muted)] p-1">
             <TabButton current={tab} value="run" onClick={setTab}>
               <span className="inline-flex items-center gap-2">
                 {t("tab.run")}
                 {running && (
                   // 运行中标记：闪烁的黑色实心方块（不是绿色圆点）
-                  <span className="inline-block w-1.5 h-1.5 bg-[var(--ink)] animate-pulse" />
+                  <span className="inline-block w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
                 )}
               </span>
             </TabButton>
@@ -83,10 +82,10 @@ export default function App() {
           </nav>
 
           {/* 右侧：常驻「问 AI」入口 + Chrome 提示语（复制成功时提示语临时换成反馈） */}
-          <div className="ml-auto self-end pb-1 flex flex-col items-end gap-1.5 max-w-[260px]">
+          <div className="ml-auto flex flex-col items-end gap-1.5 max-w-[280px]">
             <button
               onClick={askAi}
-              className="text-[11px] font-mono uppercase tracking-widest border-2 border-[var(--ink)] px-2 py-1 hover:bg-[var(--ink)] hover:text-[var(--paper)] transition-colors duration-100"
+              className="btn-outline px-3 py-1.5 text-xs"
             >
               {t("header.askAi")}
             </button>
@@ -106,7 +105,7 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto px-8 py-10">
+        <div className="max-w-7xl mx-auto px-6 md:px-8 py-8">
           {tab === "run" && <RunPage />}
           {tab === "config" && <ConfigPage />}
           {tab === "history" && <HistoryPage />}
@@ -132,11 +131,10 @@ function TabButton({
     <button
       onClick={() => onClick(value)}
       className={[
-        "pb-2 text-[11px] font-mono uppercase tracking-widest transition-colors duration-100",
-        // active：底部 4px 黑线 + 加粗黑字；inactive：弱灰 + hover 时浮现细底线
+        "rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150",
         active
-          ? "text-[var(--ink)] border-b-[3px] border-[var(--ink)] font-semibold"
-          : "text-[var(--muted-fg)] border-b-[3px] border-transparent hover:text-[var(--ink)] hover:border-[var(--border-light)]",
+          ? "bg-white text-[var(--accent)] shadow-sm"
+          : "text-[var(--muted-fg)] hover:text-[var(--ink)]",
       ].join(" ")}
     >
       {children}
