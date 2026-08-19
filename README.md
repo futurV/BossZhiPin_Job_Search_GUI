@@ -5,7 +5,14 @@ Cookie、投递日志或简历向量数据。
 
 ## Windows 首次使用
 
-需要安装 Python 3.11+、Chrome 和 `uv`。在项目目录打开 PowerShell：
+只需要预先安装 Chrome 和 `uv`，不需要另外手动安装 Python。项目要求 Python
+3.11+，执行 `uv sync --locked` 时，`uv` 会自动选择符合要求的本机 Python；如果
+电脑上没有合适版本，也会自动下载并管理一个项目专用的 Python。
+
+> 只有在电脑关闭了 uv 的 Python 自动下载功能，或当前网络无法下载 Python 时，才
+> 需要手动安装 Python 3.11+。
+
+在项目目录打开 PowerShell：
 
 最简单的方式是双击 `启动GUI.cmd`。脚本会在当前电脑上根据 `uv.lock` 创建独立
 `.venv`、生成空白个人配置 `.env`，然后启动 GUI。以后仍双击同一个文件即可。
