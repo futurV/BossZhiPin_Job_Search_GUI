@@ -35,6 +35,7 @@ environ.setdefault("_PYTAURI_DIST", "pytauri-wheel")
 
 import asyncio
 import functools
+import json
 import logging
 from typing import Optional
 
@@ -68,7 +69,8 @@ class RunConfig(_CamelModel):
     字段对齐 ``boss_zhipin.cli`` 走 CLI 时收集的东西。空字符串 / None 走跟
     CLI 一样的默认（比如 label 空时用 BOSS 默认推荐 feed）。
     """
-    usr_name: str
+    # 兼容旧版前端/调用方；当前流程使用 BOSS 账号预设招呼语，不再需要署名。
+    usr_name: str = ""
     label: str = ""
     dry_run: bool = False
     resume_path: str = ""  # 空 → 用 RESUME_PATH env / 默认值
@@ -101,7 +103,6 @@ def _apply_run_config(config: RunConfig) -> None:
         environ["DRY_RUN"] = "1"
     else:
         environ.pop("DRY_RUN", None)
-    environ["BOSS_USR_NAME"] = config.usr_name
     if config.resume_path:
         environ["RESUME_PATH"] = config.resume_path
     if config.label:
@@ -116,7 +117,6 @@ def _apply_run_config(config: RunConfig) -> None:
     from boss_zhipin.gui.env_io import write_env
     write_env(
         {
-            "BOSS_USR_NAME": config.usr_name,
             "BOSS_LABEL": config.label,
             "BOSS_AUTO_SEND_MAX_SENT": str(config.max_sent),
             "BOSS_AUTO_SEND_DELAY_MIN": str(config.delay_min),
@@ -160,7 +160,6 @@ async def start_run(body: StartRunBody, webview_window: WebviewWindow) -> dict[s
 
     报错：
     - already running → ``RuntimeError`` 由 PyTauri 自动序列化成前端 ``catch`` 能拿到的字符串
-    - 没填用户名 → ``ValueError``
     - 找不到简历 → ``ValueError``
     - 没配 LLM key / model → ``ValueError``
     """
@@ -168,12 +167,6 @@ async def start_run(body: StartRunBody, webview_window: WebviewWindow) -> dict[s
 
     if runner.is_running():
         raise RuntimeError(msg("err.already_running"))
-
-    # 名字非空前置校验：usr_name 会作为招呼语署名直接传给业务代码，空字符串会
-    # 让招呼语署名为空。跟简历校验一样在这里同步抛 ValueError，前端 catch 后
-    # 秒级可见，而不是等跑起来才发现署名空了。
-    if not body.config.usr_name.strip():
-        raise ValueError(msg("err.need_name"))
 
     # 简历存在性前置校验：不查的话，缺简历会等 cli import（torch，~10s）跑完才在
     # run_provider 深处抛 FileNotFoundError，只剩 Progress 面板一行容易错过的
@@ -229,8 +222,14 @@ async def start_run(body: StartRunBody, webview_window: WebviewWindow) -> dict[s
 
 
 def _safe_send(channel, msg: str) -> None:
+    """把 Python 字符串作为合法 JSON string 发给 Tauri Channel。
+
+    ``Channel.send(str)`` 会把参数当作 JSON 文本反序列化；直接发送普通日志行（如
+    ``16:39:20 [INFO] ...``）不是合法 JSON，底层抛错后又被旧代码静默吞掉，所以
+    CMD 有日志而 GUI 永远为空。这里先 ``json.dumps``，前端收到的仍是普通字符串。
+    """
     try:
-        channel.send(msg)
+        channel.send(json.dumps(msg, ensure_ascii=False))
     except Exception:
         pass
 
@@ -292,9 +291,18 @@ async def get_env_fields() -> dict[str, list[dict]]:
     from boss_zhipin.gui.env_io import field_meta, read_env
 
     current = read_env()
+    from boss_zhipin.paths import MODEL_CACHE_DIR_ENV, model_cache_dir
+
     return {
         "fields": [
-            {**meta, "value": current.get(str(meta["key"]), "")}
+            {
+                **meta,
+                "value": (
+                    str(model_cache_dir())
+                    if meta["key"] == MODEL_CACHE_DIR_ENV
+                    else current.get(str(meta["key"]), "")
+                ),
+            }
             for meta in field_meta()
         ]
     }

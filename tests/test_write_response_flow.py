@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 import pytest
 
-from boss_zhipin.audit import ValidationResult
 from boss_zhipin.website_oper import write_response
 
 
@@ -23,9 +22,6 @@ class BrowserPatch:
 def _patch_common_browser(monkeypatch) -> BrowserPatch:
     sleeps: list[float] = []
     events: list[tuple[str, dict]] = []
-    # 开发机 .env 可能配置了正式固定招呼语；单测必须与个人配置隔离。
-    monkeypatch.delenv(write_response.FIXED_GREETING_ENV, raising=False)
-
     async def noop(*args, **kwargs):
         return None
 
@@ -64,10 +60,6 @@ def _patch_common_browser(monkeypatch) -> BrowserPatch:
         lambda kind, **payload: events.append((kind, payload)),
     )
     monkeypatch.setattr(write_response, "current_provider_label", lambda: "test")
-    monkeypatch.setattr(write_response, "generate_letter", lambda *args: LETTER)
-    monkeypatch.setattr(
-        write_response, "validate_letter", lambda text: ValidationResult(ok=True)
-    )
     monkeypatch.setattr(write_response, "log_attempt", lambda **kwargs: None)
     # 主循环测试不能污染真实 logs/applications.csv；CSV 本身的写入/去重由
     # tests/test_audit.py::TestApplicationCsv 在 tmp_path 中单独覆盖。
@@ -452,6 +444,39 @@ def test_send_limit_stops_after_configured_successful_sends(monkeypatch):
     asyncio.run(scenario())
 
 
+def test_login_timeout_stops_before_selecting_expectation(monkeypatch):
+    async def scenario():
+        patch = _patch_common_browser(monkeypatch)
+        selected: list[str] = []
+
+        async def login_failed():
+            return False
+
+        async def select_label(label: str):
+            selected.append(label)
+            return True
+
+        monkeypatch.setattr(write_response.finding_jobs, "log_in", login_failed)
+        monkeypatch.setattr(
+            write_response.finding_jobs, "select_dropdown_option", select_label
+        )
+
+        await write_response.send_job_descriptions_to_chat(
+            usr_name="测试",
+            url="https://example.test",
+            browser_type="chrome",
+            label="Python",
+            dry_run=True,
+        )
+
+        assert selected == []
+        errors = [payload for kind, payload in patch.events if kind == "error"]
+        assert errors and errors[0]["stage"] == "login_not_confirmed"
+        assert "login_ok" not in [kind for kind, _ in patch.events]
+
+    asyncio.run(scenario())
+
+
 def test_explicit_send_limit_overrides_environment_value(monkeypatch):
     """GUI 传进来的上限必须优先于历史环境变量，防止前端默认值/加载时序污染。"""
 
@@ -583,7 +608,8 @@ def test_successful_send_waits_random_delay_between_jobs(monkeypatch):
             dry_run=False,
         )
 
-        assert sent == [LETTER, LETTER]
+        # 本工具不生成招呼语；空串只是弹窗无法提取文案时的审计兜底参数。
+        assert sent == ["", ""]
         assert 23.5 in patch.sleeps
 
     asyncio.run(scenario())

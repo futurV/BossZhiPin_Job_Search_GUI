@@ -22,6 +22,24 @@ from pathlib import Path
 
 # 跟 src-tauri/tauri.conf.json 的 identifier 保持一致
 APP_IDENTIFIER = "com.longsizhuo.boss-zhipin"
+MODEL_CACHE_DIR_ENV = "BOSS_MODEL_CACHE_DIR"
+
+
+def model_cache_dir() -> Path:
+    """返回项目侧语义模型目录；首次下载默认写到这里。"""
+    override = os.environ.get(MODEL_CACHE_DIR_ENV, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+
+    return (Path.cwd() / "model_cache").resolve()
+
+
+def hf_user_cache_dir() -> Path:
+    """返回 Hugging Face 的系统级用户缓存目录（只优先复用，不作为默认下载点）。"""
+
+    from huggingface_hub.constants import HF_HUB_CACHE
+
+    return Path(HF_HUB_CACHE).expanduser().resolve()
 
 
 def is_standalone() -> bool:

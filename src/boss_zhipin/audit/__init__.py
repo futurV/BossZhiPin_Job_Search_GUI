@@ -1,9 +1,7 @@
-"""Pre-send validation and audit logging for LLM-generated letters.
+"""投递记录与兼容旧数据的招呼语审计工具。
 
-Every generated letter goes through `validate_letter` before being sent to BOSS.
-Failures are logged but not sent, preventing garbage / error strings from
-reaching recruiters. Every attempt (sent or not) is appended to a JSONL file
-for later review and prompt iteration.
+当前自动投递链路使用 BOSS 账号预设招呼语，不再生成或做发送前校验；
+``validate_letter`` 仅保留给旧日志、独立调用方和历史测试使用。
 """
 
 from __future__ import annotations

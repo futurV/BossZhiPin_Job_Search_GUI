@@ -18,28 +18,49 @@ from pathlib import Path
 import chromadb
 from sentence_transformers import SentenceTransformer
 
+from boss_zhipin.paths import hf_user_cache_dir, model_cache_dir
+
 EMBED_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
 COLLECTION_NAME = "resume"
 
 _embedder: SentenceTransformer | None = None
+_embedder_cache_dir: Path | None = None
 log = logging.getLogger(__name__)
 
-
 def _get_embedder() -> SentenceTransformer:
-    global _embedder
-    if _embedder is None:
-        # 已下载过的模型优先纯本地加载，避免 sentence-transformers 每次启动都向
-        # Hugging Face HEAD adapter_config.json。国内网络下这次无意义的版本探测
-        # 可能重试数分钟，即使权重已经完整缓存也会把岗位筛选卡住。
-        try:
+    global _embedder, _embedder_cache_dir
+    project_cache = model_cache_dir()
+    if _embedder is None or _embedder_cache_dir != project_cache:
+        system_cache = hf_user_cache_dir()
+        local_candidates = list(dict.fromkeys((system_cache, project_cache)))
+
+        # 顺序固定：系统 HF 缓存 → 项目 model_cache。纯本地探测不会发起 HEAD 请求。
+        for candidate in local_candidates:
+            try:
+                _embedder = SentenceTransformer(
+                    EMBED_MODEL_NAME,
+                    cache_folder=str(candidate),
+                    local_files_only=True,
+                )
+                log.info(
+                    "已从本地缓存加载语义模型：%s（%s）",
+                    EMBED_MODEL_NAME,
+                    candidate,
+                )
+                break
+            except OSError:
+                continue
+        else:
+            project_cache.mkdir(parents=True, exist_ok=True)
+            log.info("本地未找到完整语义模型，首次下载到项目缓存：%s", project_cache)
             _embedder = SentenceTransformer(
                 EMBED_MODEL_NAME,
-                local_files_only=True,
+                cache_folder=str(project_cache),
             )
-            log.info("已从本地缓存加载语义模型：%s", EMBED_MODEL_NAME)
-        except OSError:
-            log.info("本地未找到完整语义模型，首次联网下载：%s", EMBED_MODEL_NAME)
-            _embedder = SentenceTransformer(EMBED_MODEL_NAME)
+
+        # 记录的是当前配置的项目缓存目标；否则模型从系统缓存加载时会因目录不同而
+        # 在每次 encode 前重复初始化。
+        _embedder_cache_dir = project_cache
     return _embedder
 
 

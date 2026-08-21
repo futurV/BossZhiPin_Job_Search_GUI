@@ -61,6 +61,18 @@ class TestAppDataDir:
         assert paths.APP_IDENTIFIER == conf["identifier"]
 
 
+class TestModelCacheDir:
+    def test_user_override_is_resolved(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv(paths.MODEL_CACHE_DIR_ENV, "./portable-models")
+        assert paths.model_cache_dir() == (tmp_path / "portable-models").resolve()
+
+    def test_default_uses_project_model_cache(self, monkeypatch, tmp_path):
+        monkeypatch.delenv(paths.MODEL_CACHE_DIR_ENV, raising=False)
+        monkeypatch.chdir(tmp_path)
+        assert paths.model_cache_dir() == (tmp_path / "model_cache").resolve()
+
+
 class TestEnsureAppDataCwd:
     def test_creates_dir_and_chdirs(self, monkeypatch, tmp_path):
         target = tmp_path / "appdata" / "nested"

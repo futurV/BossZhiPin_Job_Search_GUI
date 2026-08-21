@@ -12,7 +12,6 @@ import { LANGS, type Lang } from "../lib/i18n";
 // 都是同一条路，列表只是糖，不是限制。下面是其余通用字段。
 const CUSTOM = ""; // 下拉里「自定义」的值
 const RUN_FIELD_KEYS = new Set([
-  "BOSS_USR_NAME",
   "BOSS_LABEL",
   "BOSS_AUTO_SEND_MAX_SENT",
   "BOSS_AUTO_SEND_DELAY_MIN",

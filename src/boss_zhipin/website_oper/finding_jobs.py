@@ -33,6 +33,7 @@ CHROME_PROFILE_DIR = os.path.abspath(
 
 _browser: uc.Browser | None = None
 _tab: uc.Tab | None = None
+_active_profile_dir: str | None = None
 
 
 def _env_flag_true(name: str) -> bool:
@@ -202,7 +203,7 @@ async def shutdown() -> None:
     重启注意：这只关 Chrome 进程；nodriver 跟 uvloop 的重启不兼容问题需要
     GUI 入口传 ``loop="asyncio"`` 才能彻底解决（见 project memory）。
     """
-    global _browser, _tab
+    global _browser, _tab, _active_profile_dir
     if _browser is not None:
         try:
             _browser.stop()
@@ -210,6 +211,7 @@ async def shutdown() -> None:
             log.warning("browser.stop() 失败（不致命）: %s", e)
     _browser = None
     _tab = None
+    _active_profile_dir = None
 
 
 def _clear_singleton_locks(profile_dir: str) -> None:
@@ -339,7 +341,7 @@ async def _start_browser_with_retry(config: Config, attempts: int = 3) -> uc.Bro
 
 async def open_browser_with_options(url: str, browser: str) -> None:
     """启动 Chrome 并打开 url。``browser`` 仅接受 ``"chrome"``。"""
-    global _browser, _tab, CHROME_PROFILE_DIR
+    global _browser, _tab, _active_profile_dir, CHROME_PROFILE_DIR
     if browser != "chrome":
         raise NotImplementedError(
             f"browser={browser!r} 不再支持；nodriver 只走 Chrome。"
@@ -349,6 +351,36 @@ async def open_browser_with_options(url: str, browser: str) -> None:
         os.environ.get("BOSS_CHROME_PROFILE", "./chrome_profile")
     )
     os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
+
+    # 同一个 GUI 进程内重复点“开始”时复用现有 Chrome 和 tab。旧逻辑每轮都会
+    # taskkill 当前 Chrome 再启动，刚扫码写入的 cookie 可能来不及稳定落盘，用户
+    # 看到的就是“刚登录，下次又要扫”。复用还避免每轮多开一个窗口。
+    browser_is_alive = (
+        _browser is not None
+        and _tab is not None
+        and not getattr(_browser, "stopped", True)
+        and not getattr(_tab, "closed", True)
+    )
+    if browser_is_alive and _active_profile_dir == CHROME_PROFILE_DIR:
+        try:
+            log.info("复用当前 Chrome 会话和登录 profile")
+            await _tab.get(url)
+            await _tab.activate()
+            log.info("页面加载中... 当前URL: %s", _tab.url)
+            stable_url = await _wait_url_stable(stable_for=2.0, timeout=30)
+            log.info("页面已稳定，当前URL: %s", stable_url)
+            return
+        except Exception as e:  # noqa: BLE001 — 浏览器被手动关闭时回退到全新启动
+            log.warning("复用 Chrome 失败（%s），改为重新启动", e)
+            await shutdown()
+    elif browser_is_alive:
+        log.info(
+            "Chrome profile 已从 %s 切换为 %s，重新启动浏览器以应用配置",
+            _active_profile_dir,
+            CHROME_PROFILE_DIR,
+        )
+        await shutdown()
+
     # nodriver 用 urllib 连 Chrome CDP（http://127.0.0.1:<port>/json/version）。
     # 如果用户开了代理（如 Clash），http_proxy 会拦截 localhost 请求导致 502。
     _ensure_localhost_bypasses_proxy()
@@ -365,10 +397,20 @@ async def open_browser_with_options(url: str, browser: str) -> None:
     else:
         log.warning("Chrome sandbox: disabled（root 或 BOSS_NO_SANDBOX=1，按需使用）")
     _browser = await _start_browser_with_retry(config)
+    _active_profile_dir = CHROME_PROFILE_DIR
 
-    # 持久化 profile 启动时 Chrome 会把上次的 tab 都恢复出来；脚本控制的 tab
-    # 直接放到一个独立的新窗口里，跟历史窗口井水不犯河水，新窗口默认抢焦。
-    _tab = await _browser.get(url, new_window=True)
+    # nodriver/Chrome 启动时本来就会创建一个 about:blank 首 tab。直接导航这个 tab，
+    # 不再用 new_window=True 额外创建 BOSS 窗口，否则用户会同时看到空白页和 BOSS 页。
+    _tab = await _browser.get(url)
+    # 兼容 Chrome 恢复出来的历史空白 tab，只关闭明确的空白页，不碰任何真实网页。
+    for extra_tab in list(_browser.tabs):
+        if extra_tab is _tab:
+            continue
+        if str(getattr(extra_tab, "url", "")) in {"about:blank", "chrome://newtab/"}:
+            try:
+                await extra_tab.close()
+            except Exception:
+                pass
     try:
         await _tab.activate()
         await _tab.bring_to_front()
@@ -380,11 +422,11 @@ async def open_browser_with_options(url: str, browser: str) -> None:
     log.info("页面已稳定，当前URL: %s", stable_url)
 
 
-async def log_in() -> None:
+async def log_in() -> bool:
     """识别登录状态；未登录则点开微信扫码，等用户扫码登录。"""
     if await _is_logged_in():
         log.info("检测到已登录（profile: %s），跳过扫码", CHROME_PROFILE_DIR)
-        return
+        return True
 
     cur_url = _tab.url
     log.info("log_in 入口 URL: %s", cur_url)
@@ -414,9 +456,13 @@ async def log_in() -> None:
     while asyncio.get_event_loop().time() < deadline:
         if await _is_logged_in():
             log.info("登录成功！cookie 已写入 profile，下次跑应该不用再扫")
-            return
+            # 给 Chrome 一点时间把刚更新的 cookie/profile 状态稳定落盘。正常重复运行
+            # 会直接复用当前浏览器，不再强杀这个进程。
+            await asyncio.sleep(1)
+            return True
         await asyncio.sleep(2)
     log.warning("登录超时，请确认是否已扫码登录")
+    return False
 
 
 # ---------- JS 评估辅助 ----------
@@ -533,9 +579,18 @@ async def _expectation_state(label: str) -> dict:
     JSON.stringify((() => {{
       const wanted = {label_json}.trim().toLocaleLowerCase();
       const norm = (s) => (s || '').trim().toLocaleLowerCase();
-      const items = Array.from(
-        document.querySelectorAll('.c-expect-select a.expect-item')
-      );
+      const roots = Array.from(document.querySelectorAll(
+        '.c-expect-select, .expect-select, [class*="expect-select"], '
+        + '[class*="expectation-select"]'
+      ));
+      const items = Array.from(new Set(roots.flatMap((root) =>
+        Array.from(root.querySelectorAll(
+          'a, button, li, [role="tab"], [role="option"], .expect-item'
+        ))
+      ))).filter((el) => {{
+        const text = norm(el.innerText);
+        return text && text !== '推荐' && !text.includes('添加求职期望');
+      }});
       const exact = items.filter((el) => norm(el.innerText) === wanted);
       const prefixed = items.filter((el) =>
         norm(el.innerText).startsWith(`${{wanted}}(`)
@@ -551,6 +606,7 @@ async def _expectation_state(label: str) -> dict:
           (el) => (el.innerText || '').trim()
         ),
         targetText: target ? (target.innerText || '').trim() : '',
+        candidateTexts: items.map((el) => (el.innerText || '').trim()).slice(0, 12),
         targetActive: Boolean(target && target.classList.contains('active')),
         recommendActive: Boolean(
           recommend && recommend.classList.contains('active')
@@ -569,9 +625,18 @@ async def _click_expectation(label: str) -> dict:
     JSON.stringify((() => {{
       const wanted = {label_json}.trim().toLocaleLowerCase();
       const norm = (s) => (s || '').trim().toLocaleLowerCase();
-      const items = Array.from(
-        document.querySelectorAll('.c-expect-select a.expect-item')
-      );
+      const roots = Array.from(document.querySelectorAll(
+        '.c-expect-select, .expect-select, [class*="expect-select"], '
+        + '[class*="expectation-select"]'
+      ));
+      const items = Array.from(new Set(roots.flatMap((root) =>
+        Array.from(root.querySelectorAll(
+          'a, button, li, [role="tab"], [role="option"], .expect-item'
+        ))
+      ))).filter((el) => {{
+        const text = norm(el.innerText);
+        return text && text !== '推荐' && !text.includes('添加求职期望');
+      }});
       const exact = items.filter((el) => norm(el.innerText) === wanted);
       const prefixed = items.filter((el) =>
         norm(el.innerText).startsWith(`${{wanted}}(`)
@@ -598,14 +663,23 @@ async def select_dropdown_option(label: str) -> bool:
         return True
     log.info("[select_dropdown_option] label=%r", label)
 
-    before = await _expectation_state(label)
+    # URL 稳定不等于 Vue/React 的顶部求职期望已渲染。现场日志里页面稳定后同一秒
+    # 就判“找不到 python”，实际很可能只是 DOM 尚未出现。最多等 10 秒再下结论。
+    before = {}
+    for attempt in range(41):
+        before = await _expectation_state(label)
+        if before.get("targetFound"):
+            break
+        if attempt < 40:
+            await asyncio.sleep(0.25)
     if before.get("targetActive") and not before.get("recommendActive"):
         log.info("  ✓ 求职期望 %r 已经激活，无需重复点击", before.get("targetText"))
         return True
     if not before.get("targetFound"):
         log.error(
-            "  ✗ 顶部求职期望中找不到 %r；不会回退默认推荐流",
+            "  ✗ 顶部求职期望中找不到 %r；候选=%s；不会回退默认推荐流",
             label,
+            before.get("candidateTexts", []),
         )
         return False
 

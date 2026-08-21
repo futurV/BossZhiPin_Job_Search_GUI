@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from boss_zhipin import vectorization
 from boss_zhipin.vectorization import split_text, text_hash
 
 
@@ -68,3 +69,28 @@ class TestTextHash:
         h = text_hash("x")
         assert len(h) == 32
         assert all(c in "0123456789abcdef" for c in h)
+
+
+def test_embedder_uses_configured_model_cache(monkeypatch, tmp_path):
+    calls: list[tuple[str, dict]] = []
+    fake_model = object()
+
+    def fake_sentence_transformer(name: str, **kwargs):
+        calls.append((name, kwargs))
+        if kwargs.get("local_files_only"):
+            raise OSError("not cached")
+        return fake_model
+
+    monkeypatch.setenv("BOSS_MODEL_CACHE_DIR", str(tmp_path / "models"))
+    monkeypatch.setattr(vectorization, "SentenceTransformer", fake_sentence_transformer)
+    monkeypatch.setattr(vectorization, "_embedder", None)
+    monkeypatch.setattr(vectorization, "_embedder_cache_dir", None)
+
+    assert vectorization._get_embedder() is fake_model
+    project_cache = str((tmp_path / "models").resolve())
+    assert calls[0][1]["cache_folder"] == str(vectorization.hf_user_cache_dir())
+    assert calls[0][1]["local_files_only"] is True
+    assert calls[1][1]["cache_folder"] == project_cache
+    assert calls[1][1]["local_files_only"] is True
+    assert calls[2][1]["cache_folder"] == project_cache
+    assert "local_files_only" not in calls[2][1]

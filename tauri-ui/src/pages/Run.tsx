@@ -29,7 +29,6 @@ export default function RunPage() {
   const [logPaths, setLogPaths] = useState<{ dir: string } | null>(null);
 
   // Global form states
-  const usrName = useRunStore((s) => s.formUsrName);
   const label = useRunStore((s) => s.formLabel);
   const dryRun = useRunStore((s) => s.formDryRun);
   const maxSent = useRunStore((s) => s.formMaxSent);
@@ -59,11 +58,6 @@ export default function RunPage() {
     if (useRunStore.getState().formHydrated) return;
     ipc.getEnvFields().then(({ fields }) => {
       const stateUpdate: Record<string, any> = {};
-      const nameField = fields.find(f => f.key === "BOSS_USR_NAME");
-      if (nameField?.value) {
-        stateUpdate.formUsrName = nameField.value;
-      }
-      
       const labelField = fields.find(f => f.key === "BOSS_LABEL");
       if (labelField?.value) {
         stateUpdate.formLabel = labelField.value;
@@ -178,10 +172,6 @@ export default function RunPage() {
     // 校验顺序跟后端 start_run 的 pre-flight 对齐，让用户秒级看到缺了啥，
     // 而不是 run 闪一下、错误埋进日志面板。
     setStartError(null);
-    if (!usrName.trim()) {
-      setStartError(t("run.errNeedName"));
-      return;
-    }
     if (!llmCfg || !llmCfg.hasKey) {
       setStartError(t("run.errNeedAi"));
       return;
@@ -219,7 +209,7 @@ export default function RunPage() {
     const logChannel = new Channel<string>((line) => pushLog(line));
 
     const config: RunConfig = {
-      usrName: usrName.trim(),
+      usrName: "",
       label: label.trim(),
       dryRun,
       maxSent: parsedMaxSent,
@@ -335,17 +325,6 @@ export default function RunPage() {
           <p className="mt-1 text-xs leading-relaxed text-blue-700">{t("run.greetingNotice")}</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
-          <Field label={t("run.fieldName")} hint={t("run.hintRequired")}>
-            <input
-              type="text"
-              value={usrName}
-              onChange={(e) => setFormState({ formUsrName: e.target.value })}
-              disabled={running}
-              className="field-input"
-              placeholder={t("run.fieldNamePlaceholder")}
-            />
-          </Field>
-
           <Field label={t("run.fieldLabel")} hint={t("run.hintOptional")}>
             <input
               type="text"
