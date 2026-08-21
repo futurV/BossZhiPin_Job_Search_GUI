@@ -306,9 +306,148 @@ def test_select_expectation_does_not_fall_back_when_missing(monkeypatch):
         async def should_not_click(label: str):
             raise AssertionError("missing expectation must not click an unrelated element")
 
+        async def fake_sleep(delay: float):
+            return None
+
         monkeypatch.setattr(finding_jobs, "_expectation_state", fake_state)
         monkeypatch.setattr(finding_jobs, "_click_expectation", should_not_click)
+        monkeypatch.setattr(finding_jobs.asyncio, "sleep", fake_sleep)
         assert await select_dropdown_option("Python") is False
+
+    asyncio.run(scenario())
+
+
+def test_select_expectation_waits_for_late_dom_render(monkeypatch):
+    async def scenario():
+        calls = 0
+
+        async def fake_state(label: str):
+            nonlocal calls
+            calls += 1
+            if calls < 3:
+                return {
+                    "targetFound": False,
+                    "targetActive": False,
+                    "recommendActive": True,
+                    "candidateTexts": [],
+                }
+            return {
+                "targetFound": True,
+                "targetText": "Python(成都)",
+                "targetActive": True,
+                "recommendActive": False,
+                "firstCard": "ready",
+            }
+
+        async def fake_sleep(delay: float):
+            return None
+
+        monkeypatch.setattr(finding_jobs, "_expectation_state", fake_state)
+        monkeypatch.setattr(finding_jobs.asyncio, "sleep", fake_sleep)
+
+        assert await select_dropdown_option("python") is True
+        assert calls == 3
+
+    asyncio.run(scenario())
+
+
+def test_open_browser_reuses_existing_tab(monkeypatch):
+    async def scenario():
+        class FakeBrowser:
+            stopped = False
+
+        class FakeTab:
+            closed = False
+            url = "https://www.zhipin.com/old"
+
+            def __init__(self):
+                self.visited: list[str] = []
+
+            async def get(self, url: str):
+                self.visited.append(url)
+                self.url = url
+
+            async def activate(self):
+                return None
+
+        tab = FakeTab()
+        monkeypatch.setattr(finding_jobs, "_browser", FakeBrowser())
+        monkeypatch.setattr(finding_jobs, "_tab", tab)
+        monkeypatch.setattr(
+            finding_jobs,
+            "_active_profile_dir",
+            os.path.abspath(os.environ.get("BOSS_CHROME_PROFILE", "./chrome_profile")),
+        )
+
+        async def fake_stable(stable_for: float = 2, timeout: float = 30):
+            return tab.url
+
+        monkeypatch.setattr(finding_jobs, "_wait_url_stable", fake_stable)
+        monkeypatch.setattr(
+            finding_jobs,
+            "_reap_profile_chrome",
+            lambda *_: (_ for _ in ()).throw(AssertionError("live browser must not be killed")),
+        )
+
+        url = "https://www.zhipin.com/web/geek/job-recommend"
+        await finding_jobs.open_browser_with_options(url, "chrome")
+        assert tab.visited == [url]
+        assert finding_jobs.get_tab() is tab
+
+    asyncio.run(scenario())
+
+
+def test_open_browser_uses_initial_tab_instead_of_new_window(monkeypatch, tmp_path):
+    async def scenario():
+        class FakeConfig:
+            user_data_dir = ""
+            headless = False
+
+        class FakeTab:
+            url = "about:blank"
+
+            async def activate(self):
+                return None
+
+            async def bring_to_front(self):
+                return None
+
+        class FakeBrowser:
+            stopped = False
+
+            def __init__(self):
+                self.tab = FakeTab()
+                self.tabs = [self.tab]
+                self.calls: list[tuple[str, dict]] = []
+
+            async def get(self, url: str, **kwargs):
+                self.calls.append((url, kwargs))
+                self.tab.url = url
+                return self.tab
+
+        browser = FakeBrowser()
+        monkeypatch.setattr(finding_jobs, "_browser", None)
+        monkeypatch.setattr(finding_jobs, "_tab", None)
+        monkeypatch.setattr(finding_jobs, "Config", FakeConfig)
+        monkeypatch.setenv("BOSS_CHROME_PROFILE", str(tmp_path / "profile"))
+        monkeypatch.setattr(finding_jobs, "_ensure_localhost_bypasses_proxy", lambda: None)
+        monkeypatch.setattr(finding_jobs, "_reap_profile_chrome", lambda *_: None)
+        monkeypatch.setattr(finding_jobs, "_apply_sandbox_setting", lambda *_: True)
+
+        async def fake_start(config):
+            return browser
+
+        async def fake_stable(stable_for: float = 2, timeout: float = 30):
+            return browser.tab.url
+
+        monkeypatch.setattr(finding_jobs, "_start_browser_with_retry", fake_start)
+        monkeypatch.setattr(finding_jobs, "_wait_url_stable", fake_stable)
+
+        url = "https://www.zhipin.com/web/geek/job-recommend"
+        await finding_jobs.open_browser_with_options(url, "chrome")
+
+        assert browser.calls == [(url, {})]
+        assert len(browser.tabs) == 1
 
     asyncio.run(scenario())
 

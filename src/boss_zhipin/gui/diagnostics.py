@@ -59,7 +59,6 @@ def _gather() -> dict:
         "model": str(cfg.get("model") or "") if isinstance(cfg, dict) else "",
         "has_key": bool(cfg.get("hasKey")) if isinstance(cfg, dict) else False,
         "resume": (resume or {}).get("filename", "") if isinstance(resume, dict) else "",
-        "usr_name": _safe(lambda: os.environ.get("BOSS_USR_NAME", ""), ""),
     }
 
 
@@ -77,13 +76,13 @@ def build_ai_help(logs: list[str] | None = None) -> str:
         model = g["model"] or "(not set)"
         key_state = "configured" if g["has_key"] else "missing"
         resume = g["resume"] or "(not set)"
-        usr_name = g["usr_name"] or "(not set)"
         log_text = log_text or "(no logs yet — maybe Start hasn't been clicked)"
         return (
             f"I'm using an open-source desktop app, \"BOSS Zhipin Auto-Greet\" "
             f"(https://github.com/{repo}).\n"
             "What it does: it browses recommended jobs on BOSS Zhipin, pulls each job "
-            "description, uses an AI to write a Chinese greeting, and sends it (a personal "
+            "description, uses AI to score job fit, and clicks Contact so BOSS sends the "
+            "account's preset greeting (a personal "
             "job-hunting helper, not a high-frequency scraper).\n"
             "I'm stuck. Based on the run info and logs below, please tell me what to do / "
             "why it's failing, with concrete steps.\n\n"
@@ -95,7 +94,7 @@ def build_ai_help(logs: list[str] | None = None) -> str:
             f"- Model: {model}\n"
             f"- API key: {key_state}\n"
             f"- Resume: {resume}\n"
-            f"- Greeting signature (name): {usr_name}\n\n"
+            "- Greeting: BOSS account preset\n\n"
             "## Docs / FAQ\n"
             f"- Guide: https://github.com/{repo}/blob/master/README_EN.md\n"
             f"- FAQ: https://github.com/{repo}/blob/master/docs/wiki/faq.md\n"
@@ -110,13 +109,12 @@ def build_ai_help(logs: list[str] | None = None) -> str:
     model = g["model"] or "(未填)"
     key_state = "已配置" if g["has_key"] else "未配置"
     resume = g["resume"] or "(未设置)"
-    usr_name = g["usr_name"] or "(未填)"
     log_text = log_text or "(暂无日志 —— 可能还没点「开始」)"
     return (
         f"我在用一个开源桌面 App「BOSS 直聘 · 自动打招呼助手」"
         f"(https://github.com/{repo})。\n"
-        "它的作用：自动在 BOSS 直聘的推荐岗位里抓职位描述，用 AI 生成中文招呼语并"
-        "打招呼（个人求职辅助工具，不是高频爬虫）。\n"
+        "它的作用：自动在 BOSS 直聘的推荐岗位里抓职位描述，用 AI 评估岗位匹配度，"
+        "匹配后点击立即沟通，由 BOSS 发送账号预设招呼语（个人求职辅助工具，不是高频爬虫）。\n"
         "我遇到了使用问题，请根据下面的运行信息和日志，帮我判断该怎么操作 / 为什么"
         "报错，并给出具体步骤。\n\n"
         "## 运行环境\n"
@@ -127,7 +125,7 @@ def build_ai_help(logs: list[str] | None = None) -> str:
         f"- 模型：{model}\n"
         f"- API key：{key_state}\n"
         f"- 简历：{resume}\n"
-        f"- 招呼语署名：{usr_name}\n\n"
+        "- 招呼语：使用 BOSS 账号预设内容\n\n"
         "## 文档 / FAQ\n"
         f"- 使用说明：https://github.com/{repo}/blob/master/README.md\n"
         f"- 常见问题：https://github.com/{repo}/blob/master/docs/wiki/faq.md\n"

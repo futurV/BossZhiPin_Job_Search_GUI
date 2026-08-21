@@ -41,7 +41,10 @@
 .idea/
 .vs/
 .venv/
+# 简历原文分块、关键词和向量索引（个人隐私，禁止提交）
 /vectorstores/
+# 用户把 BOSS_MODEL_CACHE_DIR 设为 ./model_cache 时的本地模型权重
+/model_cache/
 /logs/
 /chrome_profile/
 /tmp/

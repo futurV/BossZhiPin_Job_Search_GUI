@@ -18,7 +18,6 @@ type RunState = {
   lang: Lang;
 
   // Form states preserved across tabs
-  formUsrName: string;
   formLabel: string;
   formDryRun: boolean;
   formMaxSent: string;
@@ -33,11 +32,11 @@ type RunState = {
   setLang: (lang: Lang) => void;
 
   setFormState: (state: Partial<Pick<RunState,
-    "formUsrName" | "formLabel" | "formDryRun" |
+    "formLabel" | "formDryRun" |
     "formMaxSent" | "formDelayMin" | "formDelayMax"
   >>) => void;
   hydrateForm: (state: Partial<Pick<RunState,
-    "formUsrName" | "formLabel" | "formDryRun" |
+    "formLabel" | "formDryRun" |
     "formMaxSent" | "formDelayMin" | "formDelayMax"
   >>) => void;
 };
@@ -50,7 +49,6 @@ export const useRunStore = create<RunState>((set) => ({
 
   lang: detectLang(),
 
-  formUsrName: "",
   formLabel: "",
   formDryRun: true,
   formMaxSent: "10",

@@ -57,13 +57,15 @@ class TestWriteEnvSyncsEnviron:
 class TestReadEnv:
     def test_unused_gui_fields_are_not_exposed(self):
         keys = {item["key"] for item in env_io.field_meta()}
+        assert "BOSS_USR_NAME" not in keys
         assert "BOSS_FIXED_GREETING" not in keys
         assert "LOGLEVEL" not in keys
+        assert "BOSS_MODEL_CACHE_DIR" in keys
 
     def test_round_trip(self, in_tmp_cwd, monkeypatch):
-        monkeypatch.delenv("BOSS_USR_NAME", raising=False)
-        env_io.write_env({"BOSS_USR_NAME": "张三"})
-        assert env_io.read_env().get("BOSS_USR_NAME") == "张三"
+        monkeypatch.delenv("BOSS_CHROME_PROFILE", raising=False)
+        env_io.write_env({"BOSS_CHROME_PROFILE": "./test-profile"})
+        assert env_io.read_env().get("BOSS_CHROME_PROFILE") == "./test-profile"
 
     def test_missing_file_returns_empty(self, in_tmp_cwd):
         assert env_io.read_env() == {}

@@ -1,4 +1,4 @@
-"""单个岗位的主循环：抓 JD → 生成招呼语 → 校验 → 发送（或 dry-run）。
+"""单个岗位的主循环：抓 JD → 匹配岗位 → 点击立即沟通（或 dry-run）。
 
 调用图：
 
@@ -10,9 +10,8 @@
            ├─ finding_jobs.select_dropdown_option (一次)
            └─ while True:
                 ├─ finding_jobs.get_job_description_by_index
-                ├─ generate_letter (RAG + OpenAI 兼容端点)
-                ├─ validate_letter / log_attempt
-                └─ finding_jobs.{click_by_xpath,wait_for_css,send_chat_message,navigate_back}
+                ├─ should_apply（关键词 / 向量 / LLM 匹配）
+                └─ finding_jobs.click_contact_and_confirm
 
 终止条件：
 - 连续 ``MAX_CONSECUTIVE_MISSES`` 次拿不到 JD（推测到列表底部）
@@ -26,18 +25,13 @@ import logging
 import os
 import random
 
-from boss_zhipin.audit import log_attempt, log_sent_application, validate_letter
+from boss_zhipin.audit import ValidationResult, log_attempt, log_sent_application
 from boss_zhipin.gui.events import emit as _emit_progress
 from boss_zhipin.models.job_matcher import should_apply
-from boss_zhipin.models.llm import current_provider_label, generate_letter
+from boss_zhipin.models.llm import current_provider_label
 from boss_zhipin.website_oper import finding_jobs
 
 log = logging.getLogger(__name__)
-
-# 设定后，岗位仍会走既有的关键词、向量和 LLM 匹配筛选；只有通过筛选的岗位才
-# 使用这段固定招呼语。留空则保持原来的按 JD 生成方式。
-FIXED_GREETING_ENV = "BOSS_FIXED_GREETING"
-
 
 class ReturnToListError(RuntimeError):
     """招呼语已经发出、但没能退回岗位列表。
@@ -47,6 +41,10 @@ class ReturnToListError(RuntimeError):
     重复联系同一个招聘者。仍是 ``RuntimeError`` 子类，对外行为不变。
     """
 
+    def __init__(self, message: str, greeting: str = "") -> None:
+        super().__init__(message)
+        self.greeting = greeting
+
 
 async def send_response_and_go_back(response: str) -> str:
     """点击“立即沟通”，确认 BOSS 自动发送，并关闭结果层。
@@ -54,12 +52,16 @@ async def send_response_and_go_back(response: str) -> str:
     ``response`` 只作为弹窗无法提取实际文案时的审计兜底；真正发送的是 BOSS
     账号预设招呼语。返回实际确认文案，供 ``letters.jsonl`` 准确记账。
     """
+
     result = await finding_jobs.click_contact_and_confirm(timeout=20)
     if not result.get("ok"):
         raise RuntimeError(f"点击立即沟通后未确认发送: {result.get('reason', 'unknown')}")
     actual_greeting = (result.get("greeting") or response).strip()
     if not await finding_jobs.dismiss_contact_confirmation():
-        raise ReturnToListError("招呼语已送达，但未能关闭发送结果层")
+        raise ReturnToListError(
+            "招呼语已送达，但未能关闭发送结果层",
+            greeting=actual_greeting,
+        )
     return actual_greeting
 
 
@@ -123,21 +125,29 @@ async def send_job_descriptions_to_chat(
     用哪个 LLM 端点 / model 由 ``LLM_*`` 环境变量决定（见 ``llm._build_client``），
     不再按 provider 分支。``label`` 为空字符串时跳过下拉筛选，沿用 BOSS 默认推荐 feed。
 
-    ``dry_run=True`` 时不点"立即沟通"，但 LLM 仍会调、招呼语仍会校验和写日志，
-    用来调 prompt。
+    ``dry_run=True`` 时只完成岗位筛选和评分，不点“立即沟通”。实际招呼语始终由
+    BOSS 账号设置决定，本工具不生成、不编辑，也不做发送前校验。
 
     整段必须包在 ``uc.loop().run_until_complete(...)`` 里一次性跑完，
     不能拆成多个 ``run_until_complete`` —— nodriver CDP 在事件循环停顿期间
     会进入半死状态，下次 evaluate 直接 hang。详见模块 docstring。
     """
-    # audit log（letters.jsonl）那一列的 provider/model 标签——从当前 LLM_* 推。
-    # 真实运行时 token / 成本由 generate_letter 里的 telemetry 单独记。
+    # audit log（letters.jsonl）与 applications.csv 的 provider/model 标签。
+    # LLM 只负责岗位匹配评分，不参与 BOSS 账号招呼语的生成或发送。
     llm_model = os.getenv("LLM_MODEL", "").strip()
     provider_label = current_provider_label()
 
     await finding_jobs.open_browser_with_options(url, browser_type)
     _emit_progress("browser_started")
-    await finding_jobs.log_in()
+    login_ok = await finding_jobs.log_in()
+    # 测试/旧适配器返回 None 视为兼容成功；真实 log_in 只返回 bool。旧逻辑无论扫码
+    # 是否超时都会直接 emit login_ok，GUI 会把“仍未登录”显示成已登录，下一步再报
+    # 别的错误，看起来像登录反复失效。
+    if login_ok is False:
+        message = "未检测到有效登录状态，请在打开的 BOSS 页面完成扫码后再重试。"
+        log.error(message)
+        _emit_progress("error", stage="login_not_confirmed", message=message)
+        return
     _emit_progress("login_ok")
 
     job_index = 1
@@ -332,82 +342,33 @@ async def send_job_descriptions_to_chat(
                     # 让 GUI 进度面板能看到"这条招呼语对应的岗位匹配多少分"。
                     match_score = details.get("score") if resume_text else None
 
-                    fixed_greeting = os.getenv(FIXED_GREETING_ENV, "").strip()
-                    if fixed_greeting:
-                        response = fixed_greeting
-                        log.info("使用 BOSS_FIXED_GREETING 固定招呼语")
-                    else:
-                        # LLM 调用是同步阻塞的 HTTP 请求，扔到 thread pool 跑
-                        # 避免阻塞事件循环 → 卡死 nodriver CDP heartbeat
-                        response = await asyncio.to_thread(
-                            generate_letter,
-                            usr_name,
-                            vectorstore,
-                            job_description,
-                        )
-
-                    validation = validate_letter(response)
-
-                    if not validation.ok:
-                        log.warning(
-                            "[BLOCKED] %s — preview: %r",
-                            validation.reasons,
-                            response[:80],
-                        )
-                        log_attempt(
-                            provider=provider_label,
-                            model=llm_model,
-                            job_description=job_description,
-                            letter=response,
-                            validation=validation,
-                            dry_run=dry_run,
-                            sent=False,
-                        )
-                        _emit_progress(
-                            "letter_sent",
-                            index=job_index,
-                            status="blocked",
-                            score=match_score,
-                            letter_len=len(response),
-                            application_status="未投递",
-                            application_reason="招呼语校验未通过",
-                        )
-                    elif dry_run:
-                        log.info(
-                            "[DRY-RUN] 招呼语 (%d 字符) 不发送。--- letter ---\n%s\n--------------",
-                            len(response),
-                            response,
-                        )
-                        log_attempt(
-                            provider=provider_label,
-                            model=llm_model,
-                            job_description=job_description,
-                            letter=response,
-                            validation=validation,
-                            dry_run=True,
-                            sent=False,
-                        )
+                    if dry_run:
+                        log.info("[DRY-RUN] 岗位已通过筛选，不点击立即沟通")
                         _emit_progress(
                             "letter_sent",
                             index=job_index,
                             status="dry_run",
                             score=match_score,
-                            letter_len=len(response),
+                            letter_len=0,
                             application_status="未投递",
                             application_reason="模拟运行（Dry Run）不发送",
                         )
                     else:
-                        log.info("发送招呼语：%s", response)
+                        log.info("岗位已通过筛选，点击立即沟通（使用 BOSS 账号预设招呼语）")
                         await asyncio.sleep(1)
                         # 新版 BOSS 点击“立即沟通”就自动发送账号预设招呼语，并在当前
                         # 岗位页显示结果层；不存在首轮可编辑的 #chat-input。
                         try:
-                            response = await send_response_and_go_back(response)
+                            response = await send_response_and_go_back("")
                             returned_to_list = True
                         except ReturnToListError as e:
                             log.warning("%s；招呼语已发送，照常记录后结束本轮", e)
+                            response = e.greeting
                             returned_to_list = False
                         sent_count += 1
+                        # 这里只记录 BOSS 已经发送后的实际文案。它不是本工具生成的，
+                        # 因此不再用本地长度/关键词规则阻断投递，审计状态直接记为通过。
+                        validation = ValidationResult(ok=True)
                         log_attempt(
                             provider=provider_label,
                             model=llm_model,
