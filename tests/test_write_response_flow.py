@@ -559,6 +559,72 @@ def test_dry_run_progress_explicitly_says_not_applied(monkeypatch):
     asyncio.run(scenario())
 
 
+def test_salary_filter_skips_before_scoring_and_contact(monkeypatch):
+    """岗位薪资上限低于门槛时，不应调用评分逻辑或点击立即沟通。"""
+
+    async def scenario():
+        patch = _patch_common_browser(monkeypatch)
+        sent: list[str] = []
+
+        async def get_jd(index: int):
+            return "岗位 JD Python AI 应用开发" if index == 1 else None
+
+        async def get_metadata(index: int):
+            data = await _metadata(index)
+            data["salary"] = "10-15K·13薪"
+            return data
+
+        async def get_text(selector: str, timeout: float = 5):
+            return "立即沟通"
+
+        async def send_response(response: str):
+            sent.append(response)
+            return response
+
+        async def no_scroll():
+            return False
+
+        def must_not_score(*args, **kwargs):
+            raise AssertionError("低薪岗位不应进入关键词、向量或 LLM 评分")
+
+        monkeypatch.setattr(
+            write_response.finding_jobs, "get_job_description_by_index", get_jd
+        )
+        monkeypatch.setattr(
+            write_response.finding_jobs, "get_job_metadata_by_index", get_metadata
+        )
+        monkeypatch.setattr(write_response.finding_jobs, "get_text_by_css", get_text)
+        monkeypatch.setattr(
+            write_response.finding_jobs, "scroll_to_load_more_jobs", no_scroll
+        )
+        monkeypatch.setattr(write_response, "should_apply", must_not_score)
+        monkeypatch.setattr(write_response, "send_response_and_go_back", send_response)
+
+        await write_response.send_job_descriptions_to_chat(
+            usr_name="测试",
+            url="https://example.test",
+            browser_type="chrome",
+            label="",
+            resume_text="用于开启多层评分",
+            dry_run=False,
+            min_salary_k=20,
+        )
+
+        assert sent == []
+        skipped = next(
+            payload
+            for kind, payload in patch.events
+            if kind == "job_skipped" and payload["reason"] == "salary"
+        )
+        assert skipped["salary"] == "10-15K·13薪"
+        assert skipped["min_salary_k"] == 20
+        assert skipped["application_status"] == "未投递"
+        config = next(payload for kind, payload in patch.events if kind == "run_config")
+        assert config["min_salary_k"] == 20
+
+    asyncio.run(scenario())
+
+
 def test_successful_send_waits_random_delay_between_jobs(monkeypatch):
     async def scenario():
         patch = _patch_common_browser(monkeypatch)

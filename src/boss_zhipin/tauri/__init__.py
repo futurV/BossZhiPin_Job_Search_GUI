@@ -74,6 +74,8 @@ class RunConfig(_CamelModel):
     label: str = ""
     dry_run: bool = False
     resume_path: str = ""  # 空 → 用 RESUME_PATH env / 默认值
+    min_match_score: int = Field(default=70, ge=0, le=100)
+    min_salary_k: int = Field(default=0, ge=0, le=500)
     max_sent: int = Field(default=10, ge=1, le=100)
     delay_min: float = Field(default=10.0, ge=0, le=3600)
     delay_max: float = Field(default=30.0, ge=0, le=3600)
@@ -110,6 +112,8 @@ def _apply_run_config(config: RunConfig) -> None:
     else:
         environ.pop("BOSS_LABEL", None)
     environ["BOSS_AUTO_SEND_MAX_SENT"] = str(config.max_sent)
+    environ["BOSS_MIN_MATCH_SCORE"] = str(config.min_match_score)
+    environ["BOSS_MIN_SALARY_K"] = str(config.min_salary_k)
     environ["BOSS_AUTO_SEND_DELAY_MIN"] = str(config.delay_min)
     environ["BOSS_AUTO_SEND_DELAY_MAX"] = str(config.delay_max)
 
@@ -119,6 +123,8 @@ def _apply_run_config(config: RunConfig) -> None:
         {
             "BOSS_LABEL": config.label,
             "BOSS_AUTO_SEND_MAX_SENT": str(config.max_sent),
+            "BOSS_MIN_MATCH_SCORE": str(config.min_match_score),
+            "BOSS_MIN_SALARY_K": str(config.min_salary_k),
             "BOSS_AUTO_SEND_DELAY_MIN": str(config.delay_min),
             "BOSS_AUTO_SEND_DELAY_MAX": str(config.delay_max),
         }
@@ -145,6 +151,8 @@ def _build_main_loop_factory(config: RunConfig):
             label=config.label,
             dry_run=config.dry_run,
             resume_path=resume_path,
+            min_llm_score=config.min_match_score,
+            min_salary_k=config.min_salary_k,
             max_successful_sends=config.max_sent,
         )
 
