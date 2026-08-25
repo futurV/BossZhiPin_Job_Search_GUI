@@ -13,6 +13,8 @@ import { LANGS, type Lang } from "../lib/i18n";
 const CUSTOM = ""; // 下拉里「自定义」的值
 const RUN_FIELD_KEYS = new Set([
   "BOSS_LABEL",
+  "BOSS_MIN_MATCH_SCORE",
+  "BOSS_MIN_SALARY_K",
   "BOSS_AUTO_SEND_MAX_SENT",
   "BOSS_AUTO_SEND_DELAY_MIN",
   "BOSS_AUTO_SEND_DELAY_MAX",

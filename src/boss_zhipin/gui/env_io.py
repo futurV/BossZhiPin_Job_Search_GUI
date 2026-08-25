@@ -38,7 +38,8 @@ KNOWN_KEYS: list[tuple[str, str, bool]] = [
     # 避免 Config 页一个裸路径输入框成为第二真相源。env 变量本身仍处处生效。
     ("BOSS_CHROME_PROFILE", "Chrome profile 目录（默认 ./chrome_profile）", False),
     ("BOSS_MODEL_CACHE_DIR", "语义模型项目缓存目录（默认 ./model_cache）", False),
-    ("BOSS_MIN_MATCH_SCORE", "LLM 匹配分阈值（默认 50）", False),
+    ("BOSS_MIN_MATCH_SCORE", "LLM 匹配分阈值（默认 70）", False),
+    ("BOSS_MIN_SALARY_K", "最低可接受月薪 K（默认 0，不筛选）", False),
     ("BOSS_MIN_KEYWORD_MATCH", "关键词匹配门槛（默认 2，跳过太多就调低到 1）", False),
     ("BOSS_EXCLUDE_KEYWORDS", "岗位黑名单（用逗号分隔，如：外包,驻场）", False),
     ("BOSS_AUTO_SEND_MAX_SENT", "单次最大成功投递数（建议 3-10）", False),

@@ -31,6 +31,8 @@ export default function RunPage() {
   // Global form states
   const label = useRunStore((s) => s.formLabel);
   const dryRun = useRunStore((s) => s.formDryRun);
+  const minMatchScore = useRunStore((s) => s.formMinMatchScore);
+  const minSalaryK = useRunStore((s) => s.formMinSalaryK);
   const maxSent = useRunStore((s) => s.formMaxSent);
   const delayMin = useRunStore((s) => s.formDelayMin);
   const delayMax = useRunStore((s) => s.formDelayMax);
@@ -64,6 +66,10 @@ export default function RunPage() {
       }
       const maxSentField = fields.find(f => f.key === "BOSS_AUTO_SEND_MAX_SENT");
       if (maxSentField?.value) stateUpdate.formMaxSent = maxSentField.value;
+      const minMatchScoreField = fields.find(f => f.key === "BOSS_MIN_MATCH_SCORE");
+      if (minMatchScoreField?.value) stateUpdate.formMinMatchScore = minMatchScoreField.value;
+      const minSalaryField = fields.find(f => f.key === "BOSS_MIN_SALARY_K");
+      if (minSalaryField?.value) stateUpdate.formMinSalaryK = minSalaryField.value;
       const delayMinField = fields.find(f => f.key === "BOSS_AUTO_SEND_DELAY_MIN");
       if (delayMinField?.value) stateUpdate.formDelayMin = delayMinField.value;
       const delayMaxField = fields.find(f => f.key === "BOSS_AUTO_SEND_DELAY_MAX");
@@ -188,10 +194,23 @@ export default function RunPage() {
       return;
     }
     const parsedMaxSent = Number(maxSent);
+    const parsedMinMatchScore = Number(minMatchScore);
+    const parsedMinSalaryK = Number(minSalaryK);
     const parsedDelayMin = Number(delayMin);
     const parsedDelayMax = Number(delayMax);
     if (!Number.isInteger(parsedMaxSent) || parsedMaxSent < 1 || parsedMaxSent > 100) {
       setStartError(t("run.errMaxSent"));
+      return;
+    }
+    if (
+      !Number.isInteger(parsedMinMatchScore) ||
+      parsedMinMatchScore < 0 || parsedMinMatchScore > 100
+    ) {
+      setStartError(t("run.errMinMatchScore"));
+      return;
+    }
+    if (!Number.isInteger(parsedMinSalaryK) || parsedMinSalaryK < 0 || parsedMinSalaryK > 500) {
+      setStartError(t("run.errMinSalary"));
       return;
     }
     if (
@@ -212,6 +231,8 @@ export default function RunPage() {
       usrName: "",
       label: label.trim(),
       dryRun,
+      minMatchScore: parsedMinMatchScore,
+      minSalaryK: parsedMinSalaryK,
       maxSent: parsedMaxSent,
       delayMin: parsedDelayMin,
       delayMax: parsedDelayMax,
@@ -403,6 +424,32 @@ export default function RunPage() {
               step="1"
               value={maxSent}
               onChange={(e) => setFormState({ formMaxSent: e.target.value })}
+              disabled={running}
+              className="field-input"
+            />
+          </Field>
+
+          <Field label={t("run.fieldMinMatchScore")} hint={t("run.hintMinMatchScore")}>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              value={minMatchScore}
+              onChange={(e) => setFormState({ formMinMatchScore: e.target.value })}
+              disabled={running}
+              className="field-input"
+            />
+          </Field>
+
+          <Field label={t("run.fieldMinSalary")} hint={t("run.hintMinSalary")}>
+            <input
+              type="number"
+              min="0"
+              max="500"
+              step="1"
+              value={minSalaryK}
+              onChange={(e) => setFormState({ formMinSalaryK: e.target.value })}
               disabled={running}
               className="field-input"
             />

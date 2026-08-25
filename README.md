@@ -1,7 +1,9 @@
-# BOSS 求职辅助工具（清洁分享版）
+# BOSS 求职辅助工具
 
-这是当前修改版源码的使用说明。分享包不包含任何原使用者的 API Key、简历、登录
-Cookie、投递日志或简历向量数据。
+> **项目来源**：本项目最初基于
+> [longsizhuo/BossZhiPin_Job_Search](https://github.com/longsizhuo/BossZhiPin_Job_Search)
+> 二次开发，感谢原作者及相关开源贡献者。当前仓库在其基础上重新整理了 Windows
+> GUI、岗位匹配、BOSS 默认招呼语投递与投递记录等流程。
 
 ## Windows 首次使用
 
@@ -52,6 +54,11 @@ BOSS 网页顶部已经创建的**求职期望名称**，工具会在开始运�
 4. 开始运行后观察日志。只有出现“目标求职期望已激活”或页面顶部确实切换成功，才
    表示正在处理该 Tag 的岗位；如果日志提示未找到，任务会停止，避免误投推荐频道。
 
+<p align="center">
+  <img src="docs/images/download.png" alt="BOSS 网页顶部的 Python（成都）求职期望" width="680">
+</p>
+<p align="center"><sub>网页顶部的求职期望示例：GUI 中填写职位名称部分 <code>Python</code>，无需填写城市。</sub></p>
+
 留空时，工具不会主动切换求职期望，而是使用 BOSS 当前的默认推荐 Feed。GUI 当前
 填写的 Tag 是本次运行的最高优先级，点击“开始”后会覆盖之前保存的值。
 
@@ -59,8 +66,9 @@ BOSS 网页顶部已经创建的**求职期望名称**，工具会在开始运�
 候选项；最终应以 BOSS 网页顶部实际显示的求职期望为准。
 
 <p align="center">
-  <img src="docs/images/boss-job-tag-options-cropped.png" alt="BOSS 求职期望职业名称示例（已移除手机状态栏）" width="420">
+  <img src="docs/images/boss-job-tag-options-cropped.png" alt="BOSS 手机端可选择的求职期望职业名称" width="360">
 </p>
+<p align="center"><sub>手机端搜索结果仅用于创建求职期望，不代表网页端已经激活同名频道。</sub></p>
 
 > 例如：网页顶部显示 `Python（成都）` 时，GUI 中通常填写 `Python`。不要仅因为
 > 手机端能搜到“AI应用开发工程师”，就直接认定网页端已经存在同名求职期望。
@@ -69,6 +77,8 @@ BOSS 网页顶部已经创建的**求职期望名称**，工具会在开始运�
 
 - 实际招呼语由使用者自己的 BOSS 账号设置决定；岗位通过筛选后，工具点击“立即沟通”。
 - 运行页当前填写的 Tag、最大成功投递数、等待区间和 Dry Run 状态优先于保存值。
+- 岗位匹配分阈值位于运行页，范围为 `0–100`，默认 `70`；低于阈值的岗位不会投递。
+- 运行页可设置最低可接受月薪（单位 `K`）；岗位薪资上限低于该值时跳过，`0` 表示关闭薪资筛选。面议或无法解析的薪资会先放行并在日志中说明。
 - LLM 评分调用或格式解析失败时最多重试 3 次。
 - 最大成功投递数由 GUI 直接传入本轮发送循环。
 - 点击“立即沟通”确认发送后，会处理“留在此页”弹窗并继续下一岗位。
@@ -84,6 +94,7 @@ BOSS 网页顶部已经创建的**求职期望名称**，工具会在开始运�
 - `chrome_profile/`：BOSS 登录 Cookie 和浏览器数据。
 - `logs/`：岗位、招聘者、招呼语和投递历史。
 - `vectorstores/`：简历文本向量、Chroma 数据库、简历哈希和关键词缓存。
+- `model_cache/`：项目内语义模型缓存；系统已有 Hugging Face 缓存时会优先复用。
 
 上传 GitHub 前务必运行：
 
@@ -104,7 +115,7 @@ pnpm run build
 cd ..
 ```
 
-构建结果会写入 `src/boss_zhipin/tauri/frontend/`。分享版保留这部分静态资源，避免
+构建结果会写入 `src/boss_zhipin/tauri/frontend/`。仓库保留这部分静态资源，避免
 新用户遇到 `asset not found: index.html`。
 
 ## CLI 启动（可选）

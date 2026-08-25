@@ -25,6 +25,8 @@ export type RunConfig = {
   label: string;
   dryRun: boolean;
   resumePath?: string;
+  minMatchScore: number;
+  minSalaryK: number;
   maxSent: number;
   delayMin: number;
   delayMax: number;

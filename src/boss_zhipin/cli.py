@@ -103,7 +103,7 @@ def get_label() -> str:
 def _int_env(name: str, default: int, lo: int, hi: int) -> int:
     """读一个整数环境变量，坏值 / 越界都降级到 [lo, hi] 内，**永不抛**。
 
-    ``BOSS_MIN_MATCH_SCORE`` 这类是 GUI 配置页能直接填的字段，裸 ``int()`` 遇到
+    ``BOSS_MIN_MATCH_SCORE`` 这类是 GUI 运行页能直接填的字段，裸 ``int()`` 遇到
     ``abc`` / 空串 / ``150`` 会把整个 run 崩掉，用户只看到"点开始就崩"。这里把它
     收敛成"坏值回退默认 + 一条 warning"，让跑得起来比跑得精确重要。
     """
@@ -127,6 +127,8 @@ async def run_provider(
     label: str,
     dry_run: bool,
     resume_path: str,
+    min_llm_score: int | None = None,
+    min_salary_k: int | None = None,
     max_successful_sends: int | None = None,
 ) -> None:
     """简历预处理 + 主循环，CLI 和 GUI 共用的唯一入口。
@@ -146,8 +148,11 @@ async def run_provider(
     vectorstore = embed_resume(resume_text, "./vectorstores")
     
     # LLM 匹配分阈值，低于该分跳过不投；可用 BOSS_MIN_MATCH_SCORE 覆盖。
-    # 走 _int_env：GUI 填了非数字 / 越界也不崩 run，回退到 50 / 收敛到 0-100。
-    min_llm_score = _int_env("BOSS_MIN_MATCH_SCORE", 50, 0, 100)
+    # GUI 会把本轮值直接传入，优先级最高；CLI 则读取 env，缺省统一为 70。
+    if min_llm_score is None:
+        min_llm_score = _int_env("BOSS_MIN_MATCH_SCORE", 70, 0, 100)
+    if min_salary_k is None:
+        min_salary_k = _int_env("BOSS_MIN_SALARY_K", 0, 0, 500)
     # 关键词粗筛门槛：JD 至少命中几个简历关键词才进 LLM 评分。可用 BOSS_MIN_KEYWORD_MATCH
     # 覆盖（默认 2）。觉得跳过太多（推荐 feed 跟简历词对不上）就调低到 1。
     min_keyword_match = _int_env("BOSS_MIN_KEYWORD_MATCH", 2, 0, 20)
@@ -164,6 +169,7 @@ async def run_provider(
         resume_text=resume_text,
         min_keyword_match=min_keyword_match,
         min_llm_score=min_llm_score,
+        min_salary_k=min_salary_k,
         exclude_keywords=exclude_keywords,
         vectorstore=vectorstore,
         max_successful_sends=max_successful_sends,

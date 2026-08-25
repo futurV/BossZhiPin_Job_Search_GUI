@@ -20,6 +20,8 @@ type RunState = {
   // Form states preserved across tabs
   formLabel: string;
   formDryRun: boolean;
+  formMinMatchScore: string;
+  formMinSalaryK: string;
   formMaxSent: string;
   formDelayMin: string;
   formDelayMax: string;
@@ -32,11 +34,11 @@ type RunState = {
   setLang: (lang: Lang) => void;
 
   setFormState: (state: Partial<Pick<RunState,
-    "formLabel" | "formDryRun" |
+    "formLabel" | "formDryRun" | "formMinMatchScore" | "formMinSalaryK" |
     "formMaxSent" | "formDelayMin" | "formDelayMax"
   >>) => void;
   hydrateForm: (state: Partial<Pick<RunState,
-    "formLabel" | "formDryRun" |
+    "formLabel" | "formDryRun" | "formMinMatchScore" | "formMinSalaryK" |
     "formMaxSent" | "formDelayMin" | "formDelayMax"
   >>) => void;
 };
@@ -51,6 +53,8 @@ export const useRunStore = create<RunState>((set) => ({
 
   formLabel: "",
   formDryRun: true,
+  formMinMatchScore: "70",
+  formMinSalaryK: "0",
   formMaxSent: "10",
   formDelayMin: "10",
   formDelayMax: "30",

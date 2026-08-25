@@ -29,6 +29,7 @@ from boss_zhipin.audit import ValidationResult, log_attempt, log_sent_applicatio
 from boss_zhipin.gui.events import emit as _emit_progress
 from boss_zhipin.models.job_matcher import should_apply
 from boss_zhipin.models.llm import current_provider_label
+from boss_zhipin.salary import is_below_minimum_salary
 from boss_zhipin.website_oper import finding_jobs
 
 log = logging.getLogger(__name__)
@@ -117,6 +118,7 @@ async def send_job_descriptions_to_chat(
     resume_text: str | None = None,
     min_keyword_match: int = 2,
     min_llm_score: int = 70,
+    min_salary_k: int = 0,
     exclude_keywords: list[str] | None = None,
     max_successful_sends: int | None = None,
 ) -> None:
@@ -166,6 +168,8 @@ async def send_job_descriptions_to_chat(
     _emit_progress(
         "run_config",
         max_successful_sends=max_sent,
+        min_match_score=min_llm_score,
+        min_salary_k=min_salary_k,
         delay_min_seconds=send_delay_min,
         delay_max_seconds=send_delay_max,
         dry_run=dry_run,
@@ -258,6 +262,38 @@ async def send_job_descriptions_to_chat(
                     await asyncio.sleep(1)
                     continue
                 if element == "立即沟通":
+                    salary_text = str(job_metadata.get("salary") or "").strip()
+                    salary_too_low, salary_range = is_below_minimum_salary(
+                        salary_text,
+                        min_salary_k,
+                    )
+                    if min_salary_k > 0 and salary_too_low:
+                        low_k, high_k = salary_range or (0.0, 0.0)
+                        detail = (
+                            f"薪资 {salary_text or '未知'}（约 {low_k:g}-{high_k:g}K/月）"
+                            f"，上限低于最低可接受月薪 {min_salary_k}K"
+                        )
+                        log.info("⏭️ [跳过 #%d] %s", job_index, detail)
+                        _emit_progress(
+                            "job_skipped",
+                            index=job_index,
+                            reason="salary",
+                            detail=detail,
+                            salary=salary_text,
+                            min_salary_k=min_salary_k,
+                            application_status="未投递",
+                            application_reason=detail,
+                        )
+                        job_index += 1
+                        visible_index += 1
+                        await asyncio.sleep(1)
+                        continue
+                    if min_salary_k > 0 and salary_range is None:
+                        log.info(
+                            "薪资筛选：%r 无法解析，按放行处理（最低 %dK）",
+                            salary_text or "未标注",
+                            min_salary_k,
+                        )
                     # ====== 多层过滤：黑名单 + 关键词 + 向量 + LLM ======
                     if resume_text:
                         apply, details = await asyncio.to_thread(
